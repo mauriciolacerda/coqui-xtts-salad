@@ -1,10 +1,13 @@
 fastapi==0.110.0
-uvicorn[standard]==0.30.0
-
-# Coqui TTS + XTTS v2
-TTS==0.21.1
-
-# Versão compatível com XTTS (antes das mudanças que quebram BeamSearchScorer/SampleOutput)
-transformers==4.36.2
-
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
 soundfile==0.12.1
+
+# Coqui TTS (XTTS v2 compatível) - numpy será instalado automaticamente
+TTS==0.22.0
+
+# versão compatível com XTTS (evita BeamSearchScorer error)
+transformers==4.37.2
+tokenizers==0.15.1
+
+cffi==1.16.0
