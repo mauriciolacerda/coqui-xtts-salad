@@ -1,5 +1,9 @@
+import os
+
+os.environ["COQUI_TOS_AGREED"] = "1"  # Você está aceitando a licença CPML (uso NÃO comercial)
+
 from fastapi import FastAPI, Body
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse
 from TTS.api import TTS
 import torch
 import io
