@@ -1,0 +1,6 @@
+TTS>=0.22.0
+fastapi
+uvicorn[standard]
+soundfile
+torch
+torchaudio
