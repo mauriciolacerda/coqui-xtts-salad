@@ -3,7 +3,7 @@ import io
 import soundfile as sf
 import torch
 
-from fastapi import FastAPI, Body, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Body, HTTPException, UploadFile, File, Form, Header
 from fastapi.responses import StreamingResponse, JSONResponse
 from TTS.api import TTS
 from tempfile import NamedTemporaryFile
@@ -11,6 +11,21 @@ from tempfile import NamedTemporaryFile
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 app = FastAPI()
+
+# ✅ API Key de autenticação (via variável de ambiente)
+API_KEY = os.getenv("API_KEY", "")
+
+def verify_api_key(x_api_key: str = Header(None)):
+    """Valida o API Key no header X-API-Key"""
+    if not API_KEY:
+        # Se não houver API_KEY configurada, permite acesso (dev local)
+        return True
+    if not x_api_key or x_api_key != API_KEY:
+        raise HTTPException(
+            status_code=401, 
+            detail="API Key inválida ou ausente. Use header: X-API-Key"
+        )
+    return True
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 tts = None  # ✅ Inicializa como None
@@ -48,7 +63,10 @@ async def ready():
 async def tts_simple(
     text: str = Body(...),
     language: str = Body("pt"),
+    x_api_key: str = Header(None),
 ):
+    verify_api_key(x_api_key)  # ✅ Valida API Key
+    
     if tts is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
     
@@ -67,7 +85,10 @@ async def tts_with_reference(
     text: str = Form(...),
     language: str = Form("pt"),
     speaker_wav: UploadFile = File(...),
+    x_api_key: str = Header(None),
 ):
+    verify_api_key(x_api_key)  # ✅ Valida API Key
+    
     if tts is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
     

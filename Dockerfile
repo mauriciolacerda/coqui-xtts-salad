@@ -12,14 +12,13 @@ COPY requirements.txt .
 # Instalar dependências do app (sem torch no requirements.txt)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar script de instalação do Torch
-COPY install_torch.py .
-
-# Instalação automática do Torch adequado ao ambiente
-RUN python3 install_torch.py
+# Copiar arquivos
+COPY install_torch.py startup.sh ./
+RUN chmod +x startup.sh
 
 COPY . .
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# ✅ Executa script que instala Torch e inicia servidor
+CMD ["./startup.sh"]
