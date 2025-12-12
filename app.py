@@ -2,6 +2,7 @@ import os
 import io
 import soundfile as sf
 import torch
+import asyncio
 
 from fastapi import FastAPI, Body, HTTPException, UploadFile, File, Form, Header
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -32,12 +33,25 @@ tts = None  # ✅ Inicializa como None
 
 @app.on_event("startup")
 async def startup_event():
-    """Carrega o modelo de forma assíncrona"""
+    """Carrega o modelo de forma assíncrona com timeout"""
     global tts
     try:
-        print("🚀 Carregando modelo XTTS...")
-        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+        print(f"🚀 Carregando modelo XTTS no device: {device}")
+        print(f"🔍 CUDA disponível: {torch.cuda.is_available()}")
+        
+        # Timeout de 5 minutos para carregamento
+        async def load_model():
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None, 
+                lambda: TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+            )
+        
+        tts = await asyncio.wait_for(load_model(), timeout=300)
         print("✅ Modelo carregado com sucesso!")
+        
+    except asyncio.TimeoutError:
+        print("❌ Timeout ao carregar modelo (>5min)")
     except Exception as e:
         print(f"❌ Erro ao carregar modelo: {e}")
         # Não raise aqui - deixa a aplicação subir

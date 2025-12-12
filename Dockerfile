@@ -7,18 +7,25 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# ✅ Detectar GPU e instalar Torch ANTES de copiar o resto
+COPY install_torch.py .
+RUN python3 install_torch.py
+
 COPY requirements.txt .
 
 # Instalar dependências do app (sem torch no requirements.txt)
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ✅ PRÉ-CARREGAR modelo XTTS para evitar download no runtime
+ENV COQUI_TOS_AGREED=1
+RUN python3 -c "from TTS.api import TTS; print('📦 Baixando modelo XTTS...'); TTS('tts_models/multilingual/multi-dataset/xtts_v2'); print('✅ Modelo cacheado!')"
+
 # Copiar arquivos
-COPY install_torch.py startup.sh ./
+COPY startup.sh ./
 RUN chmod +x startup.sh
 
 COPY . .
 
 EXPOSE 8000
 
-# ✅ Executa script que instala Torch e inicia servidor
 CMD ["./startup.sh"]

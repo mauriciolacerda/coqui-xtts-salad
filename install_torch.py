@@ -20,14 +20,20 @@ if has_nvidia_gpu():
     subprocess.check_call([
         sys.executable, "-m", "pip", "install", 
         "torch==2.1.2", "torchaudio==2.1.2",
-        "--index-url", "https://download.pytorch.org/whl/cu121"
+        "--index-url", "https://download.pytorch.org/whl/cu121",
+        "--verbose"
     ])
 else:
     print("⚠️ GPU não detectada. Instalando Torch CPU...")
     subprocess.check_call([
         sys.executable, "-m", "pip", "install",
         "torch==2.1.2", "torchaudio==2.1.2",
-        "--index-url", "https://download.pytorch.org/whl/cpu"
+        "--index-url", "https://download.pytorch.org/whl/cpu",
+        "--verbose"
     ])
 
 print("🎉 Torch instalado com sucesso!")
+
+# Verificação
+import torch
+print(f"🔍 Torch {torch.__version__} - CUDA: {torch.cuda.is_available()}")

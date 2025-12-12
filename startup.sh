@@ -1,10 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "🔍 Detectando ambiente..."
+echo "🚀 Iniciando aplicação..."
+echo "🔍 GPU disponível: $(python3 -c 'import torch; print("✅ CUDA" if torch.cuda.is_available() else "⚠️ CPU")')"
 
-# Instala Torch adequado ao ambiente
-python3 install_torch.py
-
-echo "🚀 Iniciando servidor..."
-uvicorn app:app --host 0.0.0.0 --port 8000
+# Inicia servidor direto (Torch já instalado no Dockerfile)
+exec uvicorn app:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
