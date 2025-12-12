@@ -4,7 +4,7 @@ import soundfile as sf
 import torch
 
 from fastapi import FastAPI, Body, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from TTS.api import TTS
 from tempfile import NamedTemporaryFile
 
@@ -13,30 +13,45 @@ os.environ["COQUI_TOS_AGREED"] = "1"
 app = FastAPI()
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+tts = None  # ✅ Inicializa como None
 
-# Carrega o modelo XTTS v2 uma vez na inicialização
-try:
-    tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-except Exception as e:
-    raise RuntimeError(f"Failed to load TTS model: {e}")
+@app.on_event("startup")
+async def startup_event():
+    """Carrega o modelo de forma assíncrona"""
+    global tts
+    try:
+        print("🚀 Carregando modelo XTTS...")
+        tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+        print("✅ Modelo carregado com sucesso!")
+    except Exception as e:
+        print(f"❌ Erro ao carregar modelo: {e}")
+        # Não raise aqui - deixa a aplicação subir
 
 @app.get("/started")
 async def started():
-    return {"status": "started"}
+    """Health check de inicialização"""
+    return JSONResponse({"status": "started"}, status_code=200)
 
 @app.get("/live")
 async def live():
-    return {"status": "live"}
+    """Health check de liveness"""
+    return JSONResponse({"status": "live"}, status_code=200)
 
 @app.get("/ready")
 async def ready():
-    return {"status": "ready"}
+    """Health check de readiness - só retorna 200 quando modelo estiver carregado"""
+    if tts is None:
+        return JSONResponse({"status": "loading", "message": "Model still loading"}, status_code=503)
+    return JSONResponse({"status": "ready"}, status_code=200)
 
 @app.post("/tts")
 async def tts_simple(
     text: str = Body(...),
     language: str = Body("pt"),
 ):
+    if tts is None:
+        raise HTTPException(status_code=503, detail="Model not loaded yet")
+    
     try:
         wav = tts.tts(text=text, language=language)
     except Exception as e:
@@ -53,11 +68,12 @@ async def tts_with_reference(
     language: str = Form("pt"),
     speaker_wav: UploadFile = File(...),
 ):
-    # Verifica tipo de arquivo (ideal .wav)
+    if tts is None:
+        raise HTTPException(status_code=503, detail="Model not loaded yet")
+    
     if speaker_wav.content_type not in ("audio/wav", "audio/x-wav", "audio/wave"):
         raise HTTPException(status_code=400, detail="Envie um arquivo WAV em speaker_wav.")
 
-    # Salva o arquivo de referência em um temp file
     try:
         with NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             tmp.write(await speaker_wav.read())
@@ -66,24 +82,20 @@ async def tts_with_reference(
         raise HTTPException(status_code=500, detail=f"Erro ao salvar arquivo de referência: {e}")
 
     try:
-        # Chama o XTTS passando o caminho do arquivo de referência
         wav = tts.tts(
             text=text,
             language=language,
-            speaker_wav=tmp_path,  # aqui é a mágica
+            speaker_wav=tmp_path,
         )
     except Exception as e:
-        # Loga o erro e retorna 500
         print("Erro ao gerar TTS:", e)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Limpa o arquivo temporário
         try:
             os.remove(tmp_path)
         except Exception:
             pass
 
-    # Converte para WAV em memória e retorna
     buffer = io.BytesIO()
     sf.write(buffer, wav, 24000, format="WAV")
     buffer.seek(0)
