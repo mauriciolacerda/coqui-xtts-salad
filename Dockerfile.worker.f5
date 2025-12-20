@@ -1,0 +1,107 @@
+# ============================================================================
+# STAGE 1: Builder - Instala depend�ncias e baixa modelos
+# ============================================================================
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Instala Python, pip, git e build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    python3.10-dev \
+    git \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copia requirements
+COPY requirements.f5.txt .
+
+# Instala PyTorch com CUDA 12.1 (otimizado) + depend�ncias F5 + F5-TTS
+RUN pip3 install --no-cache-dir \
+    torch==2.1.0 \
+    torchvision==0.16.0 \
+    torchaudio==2.1.0 \
+    --index-url https://download.pytorch.org/whl/cu121 && \
+    pip3 install --no-cache-dir -r requirements.f5.txt && \
+    pip3 install --no-cache-dir git+https://github.com/SWivid/F5-TTS.git && \
+    find /usr/local/lib/python3.10 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    find /usr/local/lib/python3.10 -type f -name '*.pyc' -delete 2>/dev/null || true
+
+# Pr�-baixa modelo F5-TTS
+RUN mkdir -p /root/.cache/huggingface/hub && \
+    python3 -c "\
+print(' Baixando modelo F5-TTS...'); \
+try: \
+    from f5_tts.infer.utils_infer import load_model; \
+    model, vocoder = load_model('F5-TTS', 'vocoder', device='cpu'); \
+    print(' Modelo F5-TTS cacheado!'); \
+except Exception as e: \
+    print(f' Modelo ser� baixado no primeiro uso: {e}'); \
+" || echo " Pre-cache opcional"
+
+# ============================================================================
+# STAGE 2: Runtime - Imagem base com depend�ncias (SEM C�DIGO)
+# ============================================================================
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+LABEL maintainer="TTS Worker - F5"
+LABEL description="Worker GPU base para F5-TTS (c�digo via git clone)"
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    TTS_MODEL_TYPE=f5 \
+    TEMP_DIR=/tmp/tts_worker \
+    PIP_NO_CACHE_DIR=1 \
+    GIT_REPO_URL=https://github.com/mauriciolacerda/tts-worker-f5.git \
+    GIT_BRANCH=main
+
+# Instala runtime dependencies + git para clone do c�digo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3-pip \
+    libsndfile1 \
+    ffmpeg \
+    git \
+    ca-certificates \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+WORKDIR /app
+
+# Copia Python packages do builder (sem rebuild)
+COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copia modelo cacheado do builder
+COPY --from=builder /root/.cache/huggingface /root/.cache/huggingface
+
+# Cria estrutura de diret�rios
+RUN mkdir -p /tmp/tts_worker /app/credentials
+
+# Credenciais GCS ser�o montadas via env var no RunPod (GOOGLE_APPLICATION_CREDENTIALS)
+
+# Copia script de startup
+COPY startup_worker.sh /app/startup_worker.sh
+RUN chmod +x /app/startup_worker.sh
+
+# ============================================================================
+# COMANDO DE INICIALIZA��O
+# ============================================================================
+
+# Health check otimizado
+HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
+    CMD python3 -c "import sys; sys.exit(0)" || exit 1
+
+# Executa startup script que clona c�digo e roda worker
+CMD ["/app/startup_worker.sh"]
